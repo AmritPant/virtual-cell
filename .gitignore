@@ -9,6 +9,15 @@ backend/.env
 backend/.env.example
 
 
+# Python
+python-worker/venv/
+python-worker/DrugCLIP/weights/
+python-worker/DrugCLIP/checkpoints/
+python-worker/.emb_cache/
+*.lmdb
+__pycache__/
+*.pyc
+
 # IDE / OS
 .cursor/
 .DS_Store

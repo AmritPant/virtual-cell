@@ -94,7 +94,7 @@ export default function DiscoveryDashboard() {
   useEffect(() => {
     if (!sessionId) return;
     const timer = setInterval(async () => {
-      const response = await fetch(`${API_BASE}/api/discovery/sessions/${sessionId}/status`);
+      const response = await fetch(`http://localhost:4000/api/discovery/sessions/${sessionId}/status`);
       if (!response.ok) return;
       const data = await response.json();
       setStatusLabel(data.progress?.message || data.status);

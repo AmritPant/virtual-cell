@@ -2,3 +2,10 @@ fastapi==0.135.2
 pydantic==2.12.5
 uvicorn[standard]
 pandas
+torch
+numpy<2
+scipy
+scikit-learn
+rdkit-pypi==2022.9.5
+lmdb
+tqdm
