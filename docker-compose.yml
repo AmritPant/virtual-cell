@@ -1,0 +1,52 @@
+version: "3.9"
+
+services:
+  api:
+    build:
+      context: ./backend
+    container_name: virtual-cell-api
+    env_file:
+      - ./backend/.env.example
+    ports:
+      - "4000:4000"
+    depends_on:
+      - mongodb
+      - redis
+      - qdrant
+
+  worker:
+    build:
+      context: ./python-worker
+    container_name: virtual-cell-worker
+    environment:
+      REDIS_URL: redis://redis:6379
+      QDRANT_URL: http://qdrant:6333
+    depends_on:
+      - redis
+      - qdrant
+
+  mongodb:
+    image: mongo:7
+    container_name: virtual-cell-mongodb
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongodb_data:/data/db
+
+  redis:
+    image: redis:7
+    container_name: virtual-cell-redis
+    ports:
+      - "6379:6379"
+
+  qdrant:
+    image: qdrant/qdrant:latest
+    container_name: virtual-cell-qdrant
+    ports:
+      - "6333:6333"
+    volumes:
+      - qdrant_data:/qdrant/storage
+
+volumes:
+  mongodb_data:
+  qdrant_data:

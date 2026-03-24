@@ -1,0 +1,14 @@
+node_modules/
+dist/
+
+# env files
+.env
+.env.*
+*.env
+backend/.env
+backend/.env.example
+
+
+# IDE / OS
+.cursor/
+.DS_Store
