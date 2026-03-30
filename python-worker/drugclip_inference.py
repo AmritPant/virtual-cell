@@ -208,7 +208,7 @@ def _build_args():
     ns.fp16 = False
     ns.fp16_init_scale = 4
     ns.fp16_scale_window = 256
-    ns.cpu = True
+    ns.cpu = (DEVICE.type == "cpu")
     ns.device_id = 0
     ns.path = _CHECKPOINT_PATH
     ns.finetune_mol_model = None
