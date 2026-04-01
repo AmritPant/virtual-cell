@@ -88,26 +88,22 @@ def _write_lmdb(records: list[dict], path: str):
 #  SMILES → mol LMDB record
 # ═══════════════════════════════════════════════════════════════════════════════
 
-def _smiles_to_mol_record(smi: str, num_conf: int = 10) -> dict | None:
+def _smiles_to_mol_record(smi: str, num_conf: int = 1) -> dict | None:
     """Convert a SMILES string to the dict format DrugCLIP expects."""
     mol = Chem.MolFromSmiles(smi)
     if mol is None:
         return None
+    if mol.GetNumHeavyAtoms() > 50:
+        return None
     try:
         mol = Chem.AddHs(mol)
-        res = AllChem.EmbedMultipleConfs(
-            mol, numConfs=num_conf, maxAttempts=5000,
-            pruneRmsThresh=0.5, useRandomCoords=False, numThreads=0,
-        )
-        if res == -1 or mol.GetNumConformers() == 0:
-            AllChem.EmbedMultipleConfs(
-                mol, numConfs=num_conf, maxAttempts=5000,
-                useRandomCoords=True, numThreads=0,
-            )
-        try:
-            AllChem.MMFFOptimizeMoleculeConfs(mol, numThreads=0)
-        except Exception:
-            pass
+        params = AllChem.ETKDG()
+        params.maxAttempts = 50
+        params.numThreads = 1
+        ok = AllChem.EmbedMolecule(mol, params)
+        if ok == -1:
+            params.useRandomCoords = True
+            AllChem.EmbedMolecule(mol, params)
         mol = Chem.RemoveHs(mol)
     except Exception:
         return None
@@ -335,11 +331,16 @@ def score_molecules(
     """
     model, task = _load_model()
 
-    # ── Convert SMILES to LMDB ──
+    # ── Convert SMILES to LMDB (parallel) ──
+    from concurrent.futures import ThreadPoolExecutor
     mol_records = []
     valid_indices = []
-    for i, smi in enumerate(tqdm(smiles_list, desc="Generating 3D conformers")):
-        rec = _smiles_to_mol_record(smi, num_conf=5)
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        results = list(tqdm(
+            pool.map(lambda s: _smiles_to_mol_record(s, 1), smiles_list),
+            total=len(smiles_list), desc="Generating 3D conformers",
+        ))
+    for i, rec in enumerate(results):
         if rec is not None:
             mol_records.append(rec)
             valid_indices.append(i)

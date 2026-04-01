@@ -2,7 +2,7 @@ import { Worker } from "bullmq";
 import Redis from "ioredis";
 import { DiscoverySession } from "../models/DiscoverySession.js";
 import { getDiscoveryQueue } from "../queues/discoveryQueue.js";
-import { fetchAlphaFoldModel, persistAlphaFoldStructure } from "../services/alphafoldService.js";
+import { fetchAlphaFoldModel, persistAlphaFoldStructure, fetchAlphaFoldPdbContent } from "../services/alphafoldService.js";
 import { runDiscover, runFastFold, runFpocket, runVina } from "../services/pythonWorkerService.js";
 
 function redisConnection() {
@@ -41,23 +41,33 @@ export function startDiscoveryWorker() {
         await updateSessionProgress(sessionId, "folding", 35, "Running pocket detection", {
           "targetProtein.structureFileId": structureFileId
         });
+        console.log(`[worker] calling /fpocket for session ${sessionId}`);
         const pocketResult = await runFpocket({ structureFileId });
+        console.log(`[worker] /fpocket OK, pockets: ${JSON.stringify(pocketResult.pockets?.length)}`);
         const pockets = Array.isArray(pocketResult.pockets) ? pocketResult.pockets : [];
 
         await updateSessionProgress(sessionId, "screening", 55, "Running molecule discovery with local database", {
           "targetProtein.pockets": pockets
         });
         
-        // Get PDB content for the discover endpoint
-        const session = await DiscoverySession.findById(sessionId);
-        const pdb_content = structureFileId ? `simulated_pdb_for_${uniprotId}` : `fallback_pdb_for_${uniprotId}`;
-        
-        // Use the new discover endpoint with local SMILES database
-        const discoveryResult = await runDiscover({ 
-          pdb_content, 
-          protein_id: uniprotId 
+        // Download real PDB content for DrugCLIP inference
+        if (!model) {
+          throw new Error(`No AlphaFold structure available for ${uniprotId}. Cannot run DrugCLIP without a real PDB structure.`);
+        }
+        console.log(`[worker] fetching AlphaFold PDB content for ${uniprotId}`);
+        const pdb_content = await fetchAlphaFoldPdbContent(model);
+        if (!pdb_content) {
+          throw new Error(`Failed to download PDB content for ${uniprotId} from AlphaFold.`);
+        }
+        console.log(`[worker] PDB content fetched (${pdb_content.length} bytes), calling /discover on Modal...`);
+
+        // Run DrugCLIP with real PDB content
+        const discoveryResult = await runDiscover({
+          pdb_content,
+          protein_id: uniprotId
         });
-        
+        console.log(`[worker] /discover returned ${discoveryResult?.top_hits?.length} hits`);
+
         const topHits = discoveryResult.top_hits || [];
 
         await DiscoverySession.findByIdAndUpdate(sessionId, {
@@ -88,6 +98,7 @@ export function startDiscoveryWorker() {
   );
 
   worker.on("failed", (job, err) => {
+    console.error(`[worker] JOB FAILED session=${job?.data?.sessionId}: ${err.message}`);
     if (!job?.data?.sessionId) return;
     updateSessionProgress(job.data.sessionId, "completed", 0, `Job failed: ${err.message}`).catch(() => {});
   });

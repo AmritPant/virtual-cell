@@ -41,3 +41,15 @@ export async function persistAlphaFoldStructure(model, uniprotId) {
   const extension = fileUrl.endsWith(".pdb") ? "pdb" : "cif";
   return streamRemoteFileToGridFs(fileUrl, `${uniprotId}.${extension}`);
 }
+
+export async function fetchAlphaFoldPdbContent(model) {
+  const pdbUrl = model?.pdbUrl;
+  if (!pdbUrl) return null;
+  try {
+    const response = await axios.get(pdbUrl, { timeout: 30000, responseType: "text" });
+    return typeof response.data === "string" ? response.data : null;
+  } catch (err) {
+    console.error("Failed to download AlphaFold PDB content:", err.message);
+    return null;
+  }
+}

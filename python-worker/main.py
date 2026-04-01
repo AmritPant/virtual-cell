@@ -23,6 +23,9 @@ except Exception as e:
 
 app = FastAPI(title="virtual-cell-worker")
 
+# Overridable by modal_app.py for parallel multi-GPU fan-out
+_parallel_discover_fn = None
+
 
 class FastFoldRequest(BaseModel):
     uniprotId: str
@@ -136,8 +139,10 @@ def discover(payload: DiscoverRequest):
     Complete discovery pipeline: scores all SMILES from the local database
     against the provided protein structure using real DrugCLIP inference.
     """
+    if _parallel_discover_fn is not None:
+        return _parallel_discover_fn(payload)
     import random
-    selected_molecules = random.sample(smiles_data, min(300, len(smiles_data)))
+    selected_molecules = random.sample(smiles_data, min(100, len(smiles_data)))
     smiles_list = [m['SMILES'] for m in selected_molecules]
     id_map = {m['SMILES']: m['ID'] for m in selected_molecules}
 

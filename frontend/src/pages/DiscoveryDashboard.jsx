@@ -11,7 +11,6 @@ const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:4000";
 
 export default function DiscoveryDashboard() {
   const [selectedPocket, setSelectedPocket] = useState(null);
-  const [sessionId, setSessionId] = useState("");
   const [statusLabel, setStatusLabel] = useState("Idle");
   const [progress, setProgress] = useState(0);
   const [status, setStatus] = useState("queued");
@@ -21,6 +20,7 @@ export default function DiscoveryDashboard() {
   const [results, setResults] = useState([]);
   const [error, setError] = useState("");
   const [compoundNames, setCompoundNames] = useState(new Map());
+  const [isRunning, setIsRunning] = useState(false);
   const viewerRef = useRef(null);
   const fallbackPockets = useMemo(
     () => [
@@ -30,7 +30,6 @@ export default function DiscoveryDashboard() {
     ],
     []
   );
-  const [serverPockets, setServerPockets] = useState([]);
 
   async function startSession() {
     const trimmed = uniprotId.trim();
@@ -45,18 +44,22 @@ export default function DiscoveryDashboard() {
     }
 
     setError("");
-    setStatusLabel("Starting discovery...");
+    setResults([]);
+    setPdbUrl("");
+    setIsRunning(true);
+    setStatus("folding");
+    setProgress(15);
+    setStatusLabel("Fetching AlphaFold structure...");
 
     try {
-      const response = await fetch(`${API_BASE}/api/discovery/sessions`, {
+      setStatus("screening");
+      setProgress(40);
+      setStatusLabel("Running DrugCLIP screening on Modal...");
+
+      const response = await fetch(`${API_BASE}/api/discovery/discover`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          proteinName: "Target Protein",
-          uniprotId: trimmed,
-          librarySource: "zinc22",
-          minAffinity: -7.5
-        })
+        body: JSON.stringify({ uniprotId: trimmed })
       });
 
       if (!response.ok) {
@@ -71,42 +74,33 @@ export default function DiscoveryDashboard() {
         } else {
           setError(errorMsg);
         }
+        setStatus("queued");
         setStatusLabel("Idle");
+        setProgress(0);
+        setIsRunning(false);
         return;
       }
 
       const data = await response.json();
-      setSessionId(data.sessionId);
-      setStatusLabel(data.progress?.message || "Queued");
-      setProgress(data.progress?.percent || 0);
-      setStatus(data.status || "queued");
+      setPdbUrl(data.pdbUrl || "");
+      setResults(Array.isArray(data.top_hits) ? data.top_hits : []);
+      setStatus("completed");
+      setProgress(100);
+      setStatusLabel("Discovery completed");
     } catch (err) {
-      console.error("Discovery session error:", err);
+      console.error("Discovery error:", err);
       if (err.name === "TypeError" && err.message.includes("fetch")) {
         setError("Cannot reach the server. Please make sure the backend is running.");
       } else {
         setError("Network error. Please check your connection and try again.");
       }
+      setStatus("queued");
       setStatusLabel("Idle");
+      setProgress(0);
+    } finally {
+      setIsRunning(false);
     }
   }
-
-  useEffect(() => {
-    if (!sessionId) return;
-    const timer = setInterval(async () => {
-      const response = await fetch(`http://localhost:4000/api/discovery/sessions/${sessionId}/status`);
-      if (!response.ok) return;
-      const data = await response.json();
-      setStatusLabel(data.progress?.message || data.status);
-      setProgress(data.progress?.percent || 0);
-      setStatus(data.status || "screening");
-      setServerPockets(Array.isArray(data.pockets) ? data.pockets : []);
-      setPdbUrl(data.pdbUrl || "");
-      setResults(Array.isArray(data.results) ? data.results : []);
-    }, 2000);
-
-    return () => clearInterval(timer);
-  }, [sessionId]);
 
   useEffect(() => {
     if (results.length === 0) return;
@@ -173,8 +167,8 @@ export default function DiscoveryDashboard() {
                 </div>
               </div>
 
-              <button onClick={startSession} className="primaryButton" disabled={!uniprotId.trim()}>
-                Start Discovery Cycle
+              <button onClick={startSession} className="primaryButton" disabled={!uniprotId.trim() || isRunning}>
+                {isRunning ? "Running..." : "Start Discovery Cycle"}
               </button>
             </section>
 
@@ -186,7 +180,7 @@ export default function DiscoveryDashboard() {
           <section className="viewportArea">
             <ProteinViewer
               ref={viewerRef}
-              pockets={serverPockets.length > 0 ? serverPockets : fallbackPockets}
+              pockets={fallbackPockets}
               onPocketSelect={(pocket) => {
                 setSelectedPocket(pocket);
                 setViewMode("pocket");
